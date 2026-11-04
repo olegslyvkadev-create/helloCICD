@@ -1,0 +1,75 @@
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # 1. Знайти останній CI для main
+      - name: Find CI
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          RUN=$(gh run list \
+            --workflow ci.yml \
+            --branch main \
+            --event push \
+            --limit 1 \
+            --json databaseId,conclusion,headSha \
+            --jq '.[0]')
+
+          if [ -z "$RUN" ] || [ "$RUN" = "null" ]; then
+            echo "CI run not found"
+            exit 1
+          fi
+
+          if [ "$(echo "$RUN" | jq -r '.conclusion')" != "success" ]; then
+            echo "Latest CI is not successful"
+            exit 1
+          fi
+
+          if [ "$(echo "$RUN" | jq -r '.headSha')" != "$EXPECTED_SHA" ]; then
+            echo "CI was not successful for this commit"
+            exit 1
+          fi
+
+          echo "run_id=$(echo "$RUN" | jq -r '.databaseId')" >> "$GITHUB_OUTPUT"
+
+      # 2. Завантажити готову збірку з CI
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: react-dist
+          run-id: ${{ steps.ci.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: dist/
+
+      # 3. Підготувати GitHub Pages
+      - uses: actions/configure-pages@v5
+
+      # 4. Підготувати artifact для Pages
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/
+
+      # 5. Опублікувати
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
