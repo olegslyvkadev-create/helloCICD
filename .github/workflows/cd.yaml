@@ -1,4 +1,3 @@
-
 name: Deploy
 
 on:
@@ -28,7 +27,8 @@ jobs:
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           RUN=$(gh run list \
-            --workflow ci.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow CI \
             --branch main \
             --event push \
             --limit 1 \
